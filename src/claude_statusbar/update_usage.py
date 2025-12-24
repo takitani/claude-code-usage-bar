@@ -14,6 +14,7 @@ Note: Only works on Linux/macOS (requires PTY support).
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -22,9 +23,56 @@ from pathlib import Path
 USAGE_FILE = Path.home() / '.claude-usage.json'
 
 
+def find_claude():
+    """Find claude executable in common locations"""
+    # Try shutil.which first (uses PATH)
+    claude = shutil.which('claude')
+    if claude:
+        return claude
+
+    # Common installation paths
+    home = Path.home()
+    common_paths = [
+        home / '.npm-global' / 'bin' / 'claude',
+        home / '.local' / 'bin' / 'claude',
+        home / '.nvm' / 'versions' / 'node',  # Will check subdirs
+        Path('/usr/local/bin/claude'),
+        Path('/usr/bin/claude'),
+    ]
+
+    for p in common_paths:
+        if p.exists() and p.is_file():
+            return str(p)
+        # Check nvm versions
+        if 'nvm' in str(p) and p.exists():
+            for node_ver in p.iterdir():
+                claude_path = node_ver / 'bin' / 'claude'
+                if claude_path.exists():
+                    return str(claude_path)
+
+    # Last resort: try npx
+    if shutil.which('npx'):
+        return 'npx claude'
+
+    return None
+
+
 def parse_usage_output(text):
     """Parse /usage command output text into structured data"""
     data = {}
+
+    # Try compact format first: 📊16% ⏱️20m | 📆13% ⏱️5d20h
+    compact_session = re.search(r'📊(\d+)%', text)
+    compact_week = re.search(r'📆(\d+)%', text)
+
+    if compact_session:
+        data['session_percent'] = int(compact_session.group(1))
+    if compact_week:
+        data['week_percent'] = int(compact_week.group(1))
+
+    # If compact format found, return early
+    if compact_session or compact_week:
+        return data
 
     # Session percentage: look for "XX% used" after "Current session"
     session_match = re.search(
@@ -110,12 +158,18 @@ def fetch_usage_via_pty():
         import select
         import time
 
+        # Find claude executable
+        claude_cmd = find_claude()
+        if not claude_cmd:
+            return {'error': 'Claude not found. Install Claude Code first.'}, ''
+
         # Create PTY
         master, slave = pty.openpty()
 
         # Start Claude Code
+        cmd = claude_cmd.split() if ' ' in claude_cmd else [claude_cmd]
         proc = subprocess.Popen(
-            ['claude'],
+            cmd,
             stdin=slave,
             stdout=slave,
             stderr=slave,
@@ -130,11 +184,11 @@ def fetch_usage_via_pty():
         timeout = 20
 
         # Wait for initial prompt
-        time.sleep(2.5)
+        time.sleep(3)
 
         # Drain initial output
         while True:
-            ready, _, _ = select.select([master], [], [], 0.1)
+            ready, _, _ = select.select([master], [], [], 0.2)
             if ready:
                 try:
                     chunk = os.read(master, 4096)
@@ -149,6 +203,7 @@ def fetch_usage_via_pty():
 
         # Send /usage command
         os.write(master, b'/usage\n')
+        time.sleep(1)
 
         # Read output until we have both session and week data
         usage_output = b''
@@ -161,11 +216,14 @@ def fetch_usage_via_pty():
                         usage_output += chunk
                         text = usage_output.decode('utf-8', errors='ignore')
 
-                        # Check if we got complete data
-                        if ('Current session' in text and
-                            'Current week' in text and
-                            text.count('% used') >= 2):
-                            time.sleep(0.5)  # Get any remaining output
+                        # Check if we got complete data (either format)
+                        has_compact = '📊' in text and '📆' in text
+                        has_full = ('Current session' in text and
+                                   'Current week' in text and
+                                   text.count('% used') >= 2)
+
+                        if has_compact or has_full:
+                            time.sleep(0.5)
                             try:
                                 chunk = os.read(master, 4096)
                                 usage_output += chunk
