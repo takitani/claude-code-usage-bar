@@ -1,6 +1,6 @@
 #!/bin/bash
-
-# Claude Status Bar Monitor - Uninstall Script
+# Claude Code Status Bar - Uninstaller
+# Usage: curl -fsSL https://raw.githubusercontent.com/takitani/claude-code-usage-bar/master/uninstall.sh | bash
 
 set -e
 
@@ -11,117 +11,165 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-echo -e "${BLUE}==================================${NC}"
-echo -e "${BLUE}Claude Status Bar Monitor Uninstaller${NC}"
-echo -e "${BLUE}==================================${NC}\n"
+echo ""
+echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║   Claude Code Status Bar - Uninstaller                    ║${NC}"
+echo -e "${BLUE}╚═══════════════════════════════════════════════════════════╝${NC}"
+echo ""
 
-# Function to print colored messages
-print_success() {
-    echo -e "${GREEN}✅ $1${NC}"
+# Confirm uninstallation
+read -p "This will remove claude-statusbar and its configuration. Continue? (y/n): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo -e "${YELLOW}Uninstallation cancelled${NC}"
+    exit 0
+fi
+
+echo ""
+
+# Remove cron job
+remove_cron() {
+    echo -e "${BLUE}Removing cron job...${NC}"
+
+    if crontab -l 2>/dev/null | grep -q "claude-usage-update"; then
+        crontab -l 2>/dev/null | grep -v "claude-usage-update" | grep -v "claude-statusbar auto-update" | crontab -
+        echo -e "${GREEN}✓${NC} Cron job removed"
+    else
+        echo -e "${GREEN}✓${NC} No cron job found"
+    fi
 }
 
-print_error() {
-    echo -e "${RED}❌ $1${NC}"
+# Remove Claude Code statusLine config
+remove_claude_config() {
+    echo -e "${BLUE}Removing Claude Code status bar config...${NC}"
+
+    CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+
+    if [ -f "$CLAUDE_SETTINGS" ]; then
+        python3 << 'EOF'
+import json
+from pathlib import Path
+
+settings_file = Path.home() / '.claude' / 'settings.json'
+
+try:
+    with open(settings_file) as f:
+        settings = json.load(f)
+
+    if 'statusLine' in settings:
+        del settings['statusLine']
+        with open(settings_file, 'w') as f:
+            json.dump(settings, f, indent=2)
+        print('Removed statusLine from settings')
+    else:
+        print('No statusLine config found')
+except Exception as e:
+    print(f'Could not update settings: {e}')
+EOF
+        echo -e "${GREEN}✓${NC} Claude Code config cleaned"
+    else
+        echo -e "${GREEN}✓${NC} No Claude Code settings found"
+    fi
 }
 
-print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
+# Uninstall package
+uninstall_package() {
+    echo -e "${BLUE}Uninstalling claude-statusbar package...${NC}"
+
+    # Try uv
+    if command -v uv &> /dev/null; then
+        if uv tool list 2>/dev/null | grep -q "claude-statusbar"; then
+            uv tool uninstall claude-statusbar
+            echo -e "${GREEN}✓${NC} Uninstalled with uv"
+            return
+        fi
+    fi
+
+    # Try pipx
+    if command -v pipx &> /dev/null; then
+        if pipx list 2>/dev/null | grep -q "claude-statusbar"; then
+            pipx uninstall claude-statusbar
+            echo -e "${GREEN}✓${NC} Uninstalled with pipx"
+            return
+        fi
+    fi
+
+    # Try pip
+    if pip3 show claude-statusbar &>/dev/null 2>&1; then
+        pip3 uninstall -y claude-statusbar
+        echo -e "${GREEN}✓${NC} Uninstalled with pip"
+        return
+    fi
+
+    echo -e "${GREEN}✓${NC} Package not found (already uninstalled?)"
 }
 
-print_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
+# Remove config files
+remove_files() {
+    echo -e "${BLUE}Removing config files...${NC}"
+
+    # Usage cache
+    if [ -f "$HOME/.claude-usage.json" ]; then
+        rm "$HOME/.claude-usage.json"
+        echo -e "${GREEN}✓${NC} Removed ~/.claude-usage.json"
+    fi
+
+    # Update log
+    if [ -f "$HOME/.claude-usage-update.log" ]; then
+        rm "$HOME/.claude-usage-update.log"
+        echo -e "${GREEN}✓${NC} Removed ~/.claude-usage-update.log"
+    fi
+
+    echo -e "${GREEN}✓${NC} Config files cleaned"
 }
 
 # Remove shell aliases
 remove_aliases() {
-    echo -e "\n${BLUE}Removing shell aliases...${NC}"
-    
-    # Detect shell config files
+    echo -e "${BLUE}Removing shell aliases...${NC}"
+
     CONFIG_FILES=(
         "$HOME/.bashrc"
         "$HOME/.zshrc"
-        "$HOME/.config/fish/config.fish"
     )
-    
-    ALIAS_MARKER="# Claude Status Bar Monitor aliases"
-    
+
     for config_file in "${CONFIG_FILES[@]}"; do
-        if [[ -f "$config_file" ]] && grep -q "$ALIAS_MARKER" "$config_file"; then
-            # Remove the marker line and the following 3 lines (the aliases)
+        if [ -f "$config_file" ] && grep -q "claude-statusbar" "$config_file"; then
+            # Remove claude-statusbar related lines
             if [[ "$OSTYPE" == "darwin"* ]]; then
-                # macOS
-                sed -i '' "/$ALIAS_MARKER/,+3d" "$config_file"
+                sed -i '' '/claude-statusbar/d' "$config_file"
+                sed -i '' "/alias cs='claude-statusbar'/d" "$config_file"
+                sed -i '' "/alias cstatus='claude-statusbar'/d" "$config_file"
             else
-                # Linux
-                sed -i "/$ALIAS_MARKER/,+3d" "$config_file"
+                sed -i '/claude-statusbar/d' "$config_file"
+                sed -i "/alias cs='claude-statusbar'/d" "$config_file"
+                sed -i "/alias cstatus='claude-statusbar'/d" "$config_file"
             fi
-            print_success "Removed aliases from $config_file"
+            echo -e "${GREEN}✓${NC} Cleaned $config_file"
         fi
     done
 }
 
-# Ask about uninstalling claude-monitor
-uninstall_claude_monitor() {
-    echo -e "\n${BLUE}Claude-monitor package${NC}"
-    echo "The claude-monitor package may be used by other applications."
-    read -p "Do you want to uninstall claude-monitor? (y/n): " -n 1 -r
-    echo
-    
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Keeping claude-monitor installed"
-        return
-    fi
-    
-    # Try to detect how it was installed
-    if command -v claude-monitor &> /dev/null; then
-        CLAUDE_MON_PATH=$(which claude-monitor)
-        
-        if [[ "$CLAUDE_MON_PATH" == *"/.local/share/uv/tools/"* ]]; then
-            print_info "Uninstalling claude-monitor (installed with uv)..."
-            uv tool uninstall claude-monitor
-            print_success "claude-monitor uninstalled"
-        elif [[ "$CLAUDE_MON_PATH" == *"/.local/bin/"* ]]; then
-            print_info "Uninstalling claude-monitor (installed with pip)..."
-            pip3 uninstall -y claude-monitor
-            print_success "claude-monitor uninstalled"
-        elif command -v pipx &> /dev/null && pipx list | grep -q claude-monitor; then
-            print_info "Uninstalling claude-monitor (installed with pipx)..."
-            pipx uninstall claude-monitor
-            print_success "claude-monitor uninstalled"
-        else
-            print_warning "Could not determine how claude-monitor was installed"
-            print_info "Please uninstall it manually if needed"
-        fi
-    else
-        print_info "claude-monitor is not installed"
-    fi
-}
-
-# Main uninstall flow
-main() {
-    print_warning "This will remove Claude Status Bar Monitor aliases and optionally claude-monitor"
-    read -p "Continue with uninstallation? (y/n): " -n 1 -r
-    echo
-    
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Uninstallation cancelled"
-        exit 0
-    fi
-    
-    # Remove aliases
-    remove_aliases
-    
-    # Ask about uninstalling claude-monitor
-    uninstall_claude_monitor
-    
-    echo -e "\n${GREEN}==================================${NC}"
-    echo -e "${GREEN}Uninstallation Complete${NC}"
-    echo -e "${GREEN}==================================${NC}"
+# Summary
+show_summary() {
     echo ""
-    echo "The statusbar.py script itself was not removed."
-    echo "You can delete the project directory if no longer needed:"
-    echo "  rm -rf $(dirname "$0")"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  Uninstallation Complete!${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo "Removed:"
+    echo "  • claude-statusbar package"
+    echo "  • Cron job (auto-update)"
+    echo "  • Claude Code statusLine config"
+    echo "  • Config files (~/.claude-usage.json)"
+    echo ""
+    echo "Restart Claude Code to apply changes."
+    echo ""
 }
 
-# Run main function
-main
+# Main
+remove_cron
+remove_claude_config
+uninstall_package
+remove_files
+remove_aliases
+show_summary

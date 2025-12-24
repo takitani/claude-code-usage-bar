@@ -1,29 +1,46 @@
-# Claude Status Bar
+# Claude Code Status Bar
 
-🔋 Lightweight status bar for Claude AI token usage in your terminal.
+🔋 Status bar for Claude Code subscription usage - shows model, session/weekly limits and reset times.
 
-![Claude Code Status Bar](https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/img.png)
+![Claude Code Status Bar](https://raw.githubusercontent.com/takitani/claude-code-usage-bar/master/img.png)
+
+## What it shows
+
+```
+🤖Op+T | 📊16% ⏱️2h30m | 📆13% ⏱️5d21h
+```
+
+| Icon | Meaning |
+|------|---------|
+| 🤖Op+T | Model (Opus) + Extended Thinking |
+| 📊16% | Session usage (16% of daily limit) |
+| ⏱️2h30m | Time until session reset |
+| 📆13% | Weekly usage (13% of weekly limit) |
+| ⏱️5d21h | Time until weekly reset |
+
+**Color coding:** 🟢 <50% | 🟡 50-80% | 🔴 >80%
 
 ## ✨ One-Line Install
 
+### Linux / macOS
+
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)" | bash
+curl -fsSL https://raw.githubusercontent.com/takitani/claude-code-usage-bar/master/web-install.sh | bash
 ```
 
-> 💡 The `?v=$(date +%s)` parameter ensures you get the latest version without CDN caching issues.
+### Windows (PowerShell)
 
-**If you still see old version, try with additional cache-busting:**
-```bash
-curl -fsSL -H "Cache-Control: no-cache" "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)&r=$RANDOM" | bash
+```powershell
+irm https://raw.githubusercontent.com/takitani/claude-code-usage-bar/master/install.ps1 | iex
 ```
 
 This automatically:
-- ✅ Installs the package
-- ✅ Configures Claude Code status bar
-- ✅ Sets up shell aliases
-- ✅ Just restart Claude Code and you're done!
+- ✅ Installs the `claude-statusbar` package
+- ✅ Configures Claude Code status bar settings
+- ✅ Sets up a cron job to update usage every 15 minutes (Linux/macOS)
+- ✅ Creates initial config files
 
-> 💡 **After installation:** Restart Claude Code and say something to see your usage!
+> 💡 **After installation:** Restart Claude Code to see the status bar!
 
 ## 📦 Alternative Install Methods
 
@@ -31,81 +48,109 @@ This automatically:
 # PyPI
 pip install claude-statusbar
 
-# uv (fast)
+# uv (recommended - fast)
 uv tool install claude-statusbar
 
 # pipx (isolated)
 pipx install claude-statusbar
 ```
 
+Then configure manually (see [Manual Configuration](#manual-configuration)).
+
 ## 🚀 Usage
 
 ```bash
-claude-statusbar  # or cs for short
+# Show status (reads from cache - instant)
+claude-statusbar
+
+# Fetch fresh data from Claude /usage
+claude-statusbar --update
+
+# JSON output for scripts
+claude-statusbar --json
 ```
 
-Output: `🔋 T:48.0k/133.3k | $:59.28/90.26 | 🤖opusplan | ⏱️31m | Usage:16.5%`
+## ⚙️ How it works
 
-- **T**: Token usage (current/limit)
-- **$**: Cost in USD (dynamic P90 limits)
-- **🤖**: Current Claude model
-- **⏱️**: Time until reset
-- **Usage %**: Cost-based percentage, color-coded (🟢 <30% | 🟡 30-70% | 🔴 >70%)
+1. **Background job** runs every 15 minutes (cron on Linux/macOS)
+2. Spawns Claude Code, runs `/usage` command, parses the output
+3. Saves data to `~/.claude-usage.json`
+4. Status bar reads from cache (instant, no delay)
 
-## 🔧 Integrations
+The usage data comes from the same `/usage` command you can run inside Claude Code.
 
-**tmux status bar:**
+## 🔧 Manual Configuration
+
+If you installed manually, add this to `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "claude-statusbar",
+    "padding": 0
+  }
+}
+```
+
+To set up the auto-update cron job:
+
 ```bash
-set -g status-right '#(claude-statusbar)'
+# Add to crontab (runs every 15 minutes)
+(crontab -l 2>/dev/null; echo "*/15 * * * * claude-usage-update >> ~/.claude-usage-update.log 2>&1") | crontab -
 ```
 
-**zsh prompt:**
-```bash
-RPROMPT='$(claude-statusbar)'
-```
+## 📂 Files
+
+| File | Purpose |
+|------|---------|
+| `~/.claude-usage.json` | Cached usage data |
+| `~/.claude/settings.json` | Claude Code settings |
+| `~/.claude-usage-update.log` | Update job logs |
+
+## 🪟 Windows Notes
+
+Windows doesn't support PTY (pseudo-terminal), so auto-update doesn't work. You can:
+
+1. **Manual update**: Run `claude-statusbar --update` periodically
+2. **Scheduled task**: Set up a Windows Task Scheduler job
 
 ## 🔄 Upgrading
 
-### Automatic Updates (Recommended)
-The tool automatically checks for updates once per day and upgrades itself. No action needed! 🎉
-
-When an update is available, you'll see: `🔄 Upgraded from v1.0.0 to v1.1.0`
-
-### Manual Upgrade
-If automatic upgrade fails, you can manually update:
-
 ```bash
-# Re-run the installer (recommended - always gets latest)
-curl -fsSL "https://raw.githubusercontent.com/leeguooooo/claude-code-usage-bar/main/web-install.sh?v=$(date +%s)" | bash
+# Re-run installer
+curl -fsSL https://raw.githubusercontent.com/takitani/claude-code-usage-bar/master/web-install.sh | bash
 
-# Or upgrade via package manager:
-# If installed with pip
+# Or via package manager
 pip install --upgrade claude-statusbar
-
-# If installed with pipx  
-pipx upgrade claude-statusbar
-
-# If installed with uv
 uv tool upgrade claude-statusbar
+pipx upgrade claude-statusbar
 ```
 
-**Note:** After upgrading, restart Claude Code to use the new version.
+## 🗑️ Uninstall
+
+```bash
+# Linux/macOS
+curl -fsSL https://raw.githubusercontent.com/takitani/claude-code-usage-bar/master/uninstall.sh | bash
+
+# Or manually
+pip uninstall claude-statusbar
+# Remove cron job
+crontab -l | grep -v "claude-usage-update" | crontab -
+# Remove config files
+rm ~/.claude-usage.json ~/.claude-usage-update.log
+```
 
 ## 💖 Support
 
-If you find this tool helpful, consider:
+If you find this tool helpful:
 - ⭐ Star this repo
-- 💖 Sponsor via GitHub
 - 🐛 Report issues
 
 ## 📄 License
 
 MIT
 
-## ⭐ Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=leeguooooo/claude-code-usage-bar&type=Date)](https://star-history.com/#leeguooooo/claude-code-usage-bar&Date)
-
 ---
 
-*Built on [Claude Monitor](https://github.com/Maciek-roboblog/Claude-Code-Usage-Monitor) by [@Maciek-roboblog](https://github.com/Maciek-roboblog)*
+*For Claude Code subscription users (Pro/Team). Shows the same data as the `/usage` command.*

@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-statusbar"
-version = "1.3.0"
+version = "2.0.0"
 authors = [
     {name = "leeguooooo", email = "leeguooooo@gmail.com"}
 ]
-description = "Lightweight status bar monitor for Claude AI token usage"
+description = "Status bar for Claude Code subscription usage - shows model, session/weekly limits and reset times"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
@@ -22,25 +22,22 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Monitoring",
 ]
-keywords = ["claude", "ai", "monitoring", "statusbar", "token-usage"]
+keywords = ["claude", "claude-code", "ai", "monitoring", "statusbar", "subscription", "usage"]
 
 dependencies = []
 
-[project.optional-dependencies]
-full = [
-    "claude-monitor>=3.0.0",
-]
-
 [project.urls]
-Homepage = "https://github.com/leeguooooo/claude-code-usage-bar"
-Repository = "https://github.com/leeguooooo/claude-code-usage-bar"
-Issues = "https://github.com/leeguooooo/claude-code-usage-bar/issues"
+Homepage = "https://github.com/takitani/claude-code-usage-bar"
+Repository = "https://github.com/takitani/claude-code-usage-bar"
+Issues = "https://github.com/takitani/claude-code-usage-bar/issues"
 
 [project.scripts]
 claude-statusbar = "claude_statusbar.cli:main"
+claude-usage-update = "claude_statusbar.update_usage:main"
 cstatus = "claude_statusbar.cli:main"
 cs = "claude_statusbar.cli:main"
 
