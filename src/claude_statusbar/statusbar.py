@@ -117,7 +117,7 @@ def parse_datetime(dt_str):
         return None
 
 def time_until(target):
-    """Calculate time until target datetime"""
+    """Calculate time until target datetime with minutes"""
     if not target:
         return "?"
 
@@ -131,9 +131,11 @@ def time_until(target):
     days = total_hours // 24
 
     if days > 0:
-        return f"{days}d"
+        hours = total_hours % 24
+        return f"{days}d{hours}h"
     elif total_hours > 0:
-        return f"{total_hours}h"
+        mins = total_minutes % 60
+        return f"{total_hours}h{mins:02d}m"
     return f"{total_minutes}m"
 
 def format_session_reset(target):
