@@ -57,20 +57,33 @@ def parse_usage_output(text):
     if session_match:
         data['session_percent'] = int(session_match.group(1))
 
-    # Session reset: "Resets XXpm" or "Resets XX:XXam/pm"
-    session_reset = re.search(r'Current session.*?Resets?\s+(\d+(?::\d+)?(?:am|pm))', text, re.DOTALL | re.IGNORECASE)
+    # Session reset: "Resets 1:59am" or "Resets 2pm" - parse to full datetime
+    session_reset = re.search(r'Current session.*?Resets?\s+(\d+(?::\d+)?)(am|pm)', text, re.DOTALL | re.IGNORECASE)
     if session_reset:
-        reset_time = session_reset.group(1).lower()
-        # Parse to hour
-        if ':' in reset_time:
-            hour = int(reset_time.split(':')[0])
+        time_part = session_reset.group(1)  # "1:59" or "2"
+        ampm = session_reset.group(2).lower()  # "am" or "pm"
+
+        # Parse hour and minute
+        if ':' in time_part:
+            hour = int(time_part.split(':')[0])
+            minute = int(time_part.split(':')[1])
         else:
-            hour = int(re.match(r'\d+', reset_time).group())
-        if 'pm' in reset_time and hour != 12:
+            hour = int(time_part)
+            minute = 0
+
+        # Convert to 24h
+        if ampm == 'pm' and hour != 12:
             hour += 12
-        elif 'am' in reset_time and hour == 12:
+        elif ampm == 'am' and hour == 12:
             hour = 0
-        data['session_reset_hour'] = hour
+
+        # Calculate next reset datetime
+        now = datetime.now()
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target <= now:
+            target = target.replace(day=target.day + 1)
+        data['session_reset'] = target.isoformat()
+        data['session_reset_hour'] = hour  # Keep for backwards compat
 
     # Week percentage (all models)
     week_match = re.search(r'Current week \(all models\)\s+[█░▓\s]*(\d+)%\s*used', text, re.DOTALL)
@@ -195,7 +208,7 @@ def update_usage_file(new_data):
         pass
 
     # Update with new values (only if they exist)
-    for key in ['session_percent', 'session_reset_hour', 'week_percent', 'week_reset']:
+    for key in ['session_percent', 'session_reset', 'session_reset_hour', 'week_percent', 'week_reset']:
         if key in new_data:
             current[key] = new_data[key]
 

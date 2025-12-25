@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """
-Claude Code Subscription Status Bar
+Claude Subscription Status
 Shows: Model+T | Session% ⏱️reset | Week% ⏱️reset
-
-Works with Claude Code subscription plans (Pro/Team).
-Usage data is cached in ~/.claude-usage.json and updated by a background job.
 """
 
 import json
-import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -20,16 +16,14 @@ RED = '\033[31m'
 RESET = '\033[0m'
 DIM = '\033[2m'
 
-# File paths
 USAGE_FILE = Path.home() / '.claude-usage.json'
-CLAUDE_PROJECTS = Path.home() / '.claude' / 'projects'
-
+CACHE_FILE = Path.home() / '.claude-status-cache.json'
 
 def load_usage_config():
-    """Load usage config from JSON file"""
+    """Load manual usage config"""
     defaults = {
         'session_percent': None,
-        'session_reset_hour': None,
+        'session_reset_hour': 21,  # 9pm
         'week_percent': None,
         'week_reset': None
     }
@@ -38,30 +32,26 @@ def load_usage_config():
             with open(USAGE_FILE) as f:
                 data = json.load(f)
                 defaults.update(data)
-    except Exception:
+    except:
         pass
     return defaults
 
-
 def get_model_from_jsonl():
-    """Get current model and thinking mode from recent JSONL conversation files"""
-    if not CLAUDE_PROJECTS.exists():
+    """Get model and thinking from recent JSONL files"""
+    data_path = Path.home() / '.claude' / 'projects'
+    if not data_path.exists():
         return None, False
 
-    try:
-        jsonl_files = sorted(
-            CLAUDE_PROJECTS.rglob("*.jsonl"),
-            key=lambda f: f.stat().st_mtime,
-            reverse=True
-        )
-    except Exception:
-        return None, False
+    jsonl_files = sorted(
+        data_path.rglob("*.jsonl"),
+        key=lambda f: f.stat().st_mtime,
+        reverse=True
+    )
 
     latest_model = None
     has_thinking = False
 
     for f in jsonl_files[:30]:
-        # Skip subagent files
         if 'agent-' in f.name:
             continue
         try:
@@ -78,38 +68,33 @@ def get_model_from_jsonl():
                             for block in content:
                                 if isinstance(block, dict) and block.get('type') == 'thinking':
                                     has_thinking = True
-                    except Exception:
+                    except:
                         continue
-        except Exception:
+        except:
             continue
         if latest_model:
             break
 
     return latest_model, has_thinking
 
-
 def format_model(model, has_thinking):
-    """Format model name for display (Op, So, Ha + T for thinking)"""
+    """Format model name"""
     if not model:
         return "?"
-
-    model_lower = model.lower()
-    if 'opus' in model_lower:
+    if 'opus' in model.lower():
         name = 'Op'
-    elif 'sonnet' in model_lower:
+    elif 'sonnet' in model.lower():
         name = 'So'
-    elif 'haiku' in model_lower:
+    elif 'haiku' in model.lower():
         name = 'Ha'
     else:
         name = '?'
-
     if has_thinking:
         return f"{name}+T"
     return name
 
-
 def get_color(pct):
-    """Get ANSI color based on usage percentage"""
+    """Color based on percentage"""
     if pct is None:
         return DIM
     if pct >= 80:
@@ -118,21 +103,20 @@ def get_color(pct):
         return YELLOW
     return GREEN
 
-
 def time_until(target_hour=None, target_datetime=None):
-    """Calculate human-readable time until reset"""
+    """Calculate time until target"""
     now = datetime.now()
 
     if target_datetime:
+        # Parse ISO datetime
         try:
             if isinstance(target_datetime, str):
-                # Handle ISO format with optional timezone
                 target = datetime.fromisoformat(target_datetime.replace('Z', '+00:00'))
                 if target.tzinfo:
                     target = target.replace(tzinfo=None)
             else:
                 target = target_datetime
-        except Exception:
+        except:
             return "?"
     elif target_hour is not None:
         target = now.replace(hour=target_hour, minute=0, second=0, microsecond=0)
@@ -142,7 +126,7 @@ def time_until(target_hour=None, target_datetime=None):
         return "?"
 
     if target <= now:
-        return "now"
+        return "0m"
 
     diff = target - now
     total_minutes = int(diff.total_seconds() / 60)
@@ -157,51 +141,36 @@ def time_until(target_hour=None, target_datetime=None):
         return f"{total_hours}h{mins:02d}m"
     return f"{total_minutes}m"
 
-
-def format_output(model_str, s_pct, s_reset, w_pct, w_reset, use_color=True):
-    """Format the status bar output"""
-    if use_color:
-        s_color = get_color(s_pct)
-        w_color = get_color(w_pct)
-
-        s_str = f"{s_pct}%" if s_pct is not None else "?%"
-        w_str = f"{w_pct}%" if w_pct is not None else "?%"
-
-        return (
-            f"{CYAN}🤖{model_str}{RESET} | "
-            f"{s_color}📊{s_str}{RESET} ⏱️{s_reset} | "
-            f"{w_color}📆{w_str}{RESET} ⏱️{w_reset}"
-        )
-    else:
-        s_str = f"{s_pct}%" if s_pct is not None else "?%"
-        w_str = f"{w_pct}%" if w_pct is not None else "?%"
-        return f"🤖{model_str} | 📊{s_str} ⏱️{s_reset} | 📆{w_str} ⏱️{w_reset}"
-
-
 def main():
-    """Main entry point"""
-    # Check for --no-color flag
-    use_color = '--no-color' not in sys.argv
-
-    # Load usage config
+    # Load config
     cfg = load_usage_config()
 
-    # Get model info from JSONL files
+    # Get model
     model, has_thinking = get_model_from_jsonl()
     model_str = format_model(model, has_thinking)
 
     # Session info
     s_pct = cfg.get('session_percent')
-    s_reset_hour = cfg.get('session_reset_hour')
-    s_reset = time_until(target_hour=s_reset_hour) if s_reset_hour else "?"
+    # Prefer session_reset (datetime) over session_reset_hour (backwards compat)
+    if cfg.get('session_reset'):
+        s_reset = time_until(target_datetime=cfg.get('session_reset'))
+    else:
+        s_reset = time_until(target_hour=cfg.get('session_reset_hour', 21))
+    s_color = get_color(s_pct)
+    s_str = f"{s_pct}%" if s_pct is not None else "?%"
 
     # Week info
     w_pct = cfg.get('week_percent')
     w_reset = time_until(target_datetime=cfg.get('week_reset'))
+    w_color = get_color(w_pct)
+    w_str = f"{w_pct}%" if w_pct is not None else "?%"
 
-    # Output
-    print(format_output(model_str, s_pct, s_reset, w_pct, w_reset, use_color))
-
+    # Output: 🤖Op+T | 📊16%⏱️2h | 📅13%⏱️5d
+    print(
+        f"{CYAN}🤖{model_str}{RESET} | "
+        f"{s_color}📊{s_str}{RESET} ⏱️{s_reset} | "
+        f"{w_color}📆{w_str}{RESET} ⏱️{w_reset}"
+    )
 
 if __name__ == '__main__':
     main()
