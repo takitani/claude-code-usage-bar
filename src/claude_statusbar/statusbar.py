@@ -196,11 +196,11 @@ def main():
     w_color = get_color(w_pct)
     w_pct_str = f"{w_pct}%" if w_pct is not None else "?"
 
-    # Output: 🤖Op+T | 📊2% 3h, 3pm | 📆1% 6d, 01/jan 5am
+    # Output: 🤖 Op+T | 📊 2% 3h, 3pm | 🗓️ 1% 6d, 01/jan 5am
     print(
-        f"{CYAN}🤖{model_str}{RESET} | "
-        f"{s_color}📊{s_pct_str}{RESET} {s_time}, {s_reset_str} | "
-        f"{w_color}📆{w_pct_str}{RESET} {w_time}, {w_reset_str}"
+        f"{CYAN}🤖 {model_str}{RESET} | "
+        f"{s_color}📊 {s_pct_str}{RESET} {s_time}, {s_reset_str} | "
+        f"{w_color}🗓️ {w_pct_str}{RESET} {w_time}, {w_reset_str}"
     )
 
 if __name__ == '__main__':
