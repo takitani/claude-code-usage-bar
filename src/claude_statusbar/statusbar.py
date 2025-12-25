@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Claude Subscription Status
-Shows: Model+T | Session% ⏱️reset | Week% ⏱️reset
+Shows: Model+T | Session: X% Yh, Zpm | Week: X% Yd, DD/mon Ham
 """
 
 import json
@@ -17,7 +17,6 @@ RESET = '\033[0m'
 DIM = '\033[2m'
 
 USAGE_FILE = Path.home() / '.claude-usage.json'
-CACHE_FILE = Path.home() / '.claude-status-cache.json'
 
 def load_usage_config():
     """Load manual usage config"""
@@ -103,28 +102,26 @@ def get_color(pct):
         return YELLOW
     return GREEN
 
-def time_until(target_hour=None, target_datetime=None):
-    """Calculate time until target"""
-    now = datetime.now()
+def parse_datetime(dt_str):
+    """Parse ISO datetime string to datetime object"""
+    if not dt_str:
+        return None
+    try:
+        if isinstance(dt_str, str):
+            target = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+            if target.tzinfo:
+                target = target.replace(tzinfo=None)
+            return target
+        return dt_str
+    except:
+        return None
 
-    if target_datetime:
-        # Parse ISO datetime
-        try:
-            if isinstance(target_datetime, str):
-                target = datetime.fromisoformat(target_datetime.replace('Z', '+00:00'))
-                if target.tzinfo:
-                    target = target.replace(tzinfo=None)
-            else:
-                target = target_datetime
-        except:
-            return "?"
-    elif target_hour is not None:
-        target = now.replace(hour=target_hour, minute=0, second=0, microsecond=0)
-        if now >= target:
-            target += timedelta(days=1)
-    else:
+def time_until(target):
+    """Calculate time until target datetime"""
+    if not target:
         return "?"
 
+    now = datetime.now()
     if target <= now:
         return "0m"
 
@@ -134,12 +131,44 @@ def time_until(target_hour=None, target_datetime=None):
     days = total_hours // 24
 
     if days > 0:
-        hours = total_hours % 24
-        return f"{days}d{hours}h"
+        return f"{days}d"
     elif total_hours > 0:
-        mins = total_minutes % 60
-        return f"{total_hours}h{mins:02d}m"
+        return f"{total_hours}h"
     return f"{total_minutes}m"
+
+def format_session_reset(target):
+    """Format session reset time like '3pm' or '3:30pm'"""
+    if not target:
+        return "?"
+
+    hour = target.hour
+    minute = target.minute
+    ampm = "am" if hour < 12 else "pm"
+    hour_12 = hour % 12
+    if hour_12 == 0:
+        hour_12 = 12
+
+    if minute == 0:
+        return f"{hour_12}{ampm}"
+    return f"{hour_12}:{minute:02d}{ampm}"
+
+def format_week_reset(target):
+    """Format week reset like '01/jan 5am'"""
+    if not target:
+        return "?"
+
+    day = target.day
+    month = target.strftime("%b").lower()
+    hour = target.hour
+    minute = target.minute
+    ampm = "am" if hour < 12 else "pm"
+    hour_12 = hour % 12
+    if hour_12 == 0:
+        hour_12 = 12
+
+    if minute == 0:
+        return f"{day:02d}/{month} {hour_12}{ampm}"
+    return f"{day:02d}/{month} {hour_12}:{minute:02d}{ampm}"
 
 def main():
     # Load config
@@ -151,25 +180,25 @@ def main():
 
     # Session info
     s_pct = cfg.get('session_percent')
-    # Prefer session_reset (datetime) over session_reset_hour (backwards compat)
-    if cfg.get('session_reset'):
-        s_reset = time_until(target_datetime=cfg.get('session_reset'))
-    else:
-        s_reset = time_until(target_hour=cfg.get('session_reset_hour', 21))
+    s_target = parse_datetime(cfg.get('session_reset'))
+    s_time = time_until(s_target)
+    s_reset_str = format_session_reset(s_target)
     s_color = get_color(s_pct)
-    s_str = f"{s_pct}%" if s_pct is not None else "?%"
+    s_pct_str = f"{s_pct}%" if s_pct is not None else "?"
 
     # Week info
     w_pct = cfg.get('week_percent')
-    w_reset = time_until(target_datetime=cfg.get('week_reset'))
+    w_target = parse_datetime(cfg.get('week_reset'))
+    w_time = time_until(w_target)
+    w_reset_str = format_week_reset(w_target)
     w_color = get_color(w_pct)
-    w_str = f"{w_pct}%" if w_pct is not None else "?%"
+    w_pct_str = f"{w_pct}%" if w_pct is not None else "?"
 
-    # Output: 🤖Op+T | 📊16%⏱️2h | 📅13%⏱️5d
+    # Output: 🤖Op+T | 📊2% 3h, 3pm | 📆1% 6d, 01/jan 5am
     print(
         f"{CYAN}🤖{model_str}{RESET} | "
-        f"{s_color}📊{s_str}{RESET} ⏱️{s_reset} | "
-        f"{w_color}📆{w_str}{RESET} ⏱️{w_reset}"
+        f"{s_color}📊{s_pct_str}{RESET} {s_time}, {s_reset_str} | "
+        f"{w_color}📆{w_pct_str}{RESET} {w_time}, {w_reset_str}"
     )
 
 if __name__ == '__main__':
