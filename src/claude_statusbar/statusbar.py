@@ -8,6 +8,12 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+try:
+    import yaml
+    HAS_YAML = True
+except ImportError:
+    HAS_YAML = False
+
 # ANSI colors
 CYAN = '\033[36m'
 GREEN = '\033[32m'
@@ -17,6 +23,30 @@ RESET = '\033[0m'
 DIM = '\033[2m'
 
 USAGE_FILE = Path.home() / '.claude-usage.json'
+CONFIG_FILE = Path.home() / '.claude-statusbar.yml'
+
+def load_config():
+    """Load config from YAML file"""
+    defaults = {
+        'time_format': 12,  # 12 or 24
+    }
+    if not CONFIG_FILE.exists():
+        return defaults
+    try:
+        if HAS_YAML:
+            with open(CONFIG_FILE) as f:
+                data = yaml.safe_load(f) or {}
+                defaults.update(data)
+        else:
+            # Simple fallback parser for time_format
+            with open(CONFIG_FILE) as f:
+                for line in f:
+                    if line.strip().startswith('time_format:'):
+                        val = line.split(':')[1].strip()
+                        defaults['time_format'] = int(val)
+    except:
+        pass
+    return defaults
 
 def load_usage_config():
     """Load manual usage config"""
@@ -138,24 +168,29 @@ def time_until(target):
         return f"{total_hours}h{mins:02d}m"
     return f"{total_minutes}m"
 
-def format_session_reset(target):
-    """Format session reset time like '3pm' or '3:30pm'"""
+def format_session_reset(target, time_format=12):
+    """Format session reset time like '3pm' or '15h'"""
     if not target:
         return "?"
 
     hour = target.hour
     minute = target.minute
-    ampm = "am" if hour < 12 else "pm"
-    hour_12 = hour % 12
-    if hour_12 == 0:
-        hour_12 = 12
 
-    if minute == 0:
-        return f"{hour_12}{ampm}"
-    return f"{hour_12}:{minute:02d}{ampm}"
+    if time_format == 24:
+        if minute == 0:
+            return f"{hour}h"
+        return f"{hour}:{minute:02d}"
+    else:
+        ampm = "am" if hour < 12 else "pm"
+        hour_12 = hour % 12
+        if hour_12 == 0:
+            hour_12 = 12
+        if minute == 0:
+            return f"{hour_12}{ampm}"
+        return f"{hour_12}:{minute:02d}{ampm}"
 
-def format_week_reset(target):
-    """Format week reset like '01/jan 5am'"""
+def format_week_reset(target, time_format=12):
+    """Format week reset like '01/jan 5am' or '01/jan 5h'"""
     if not target:
         return "?"
 
@@ -163,36 +198,43 @@ def format_week_reset(target):
     month = target.strftime("%b").lower()
     hour = target.hour
     minute = target.minute
-    ampm = "am" if hour < 12 else "pm"
-    hour_12 = hour % 12
-    if hour_12 == 0:
-        hour_12 = 12
 
-    if minute == 0:
-        return f"{day:02d}/{month} {hour_12}{ampm}"
-    return f"{day:02d}/{month} {hour_12}:{minute:02d}{ampm}"
+    if time_format == 24:
+        if minute == 0:
+            return f"{day:02d}/{month} {hour}h"
+        return f"{day:02d}/{month} {hour}:{minute:02d}"
+    else:
+        ampm = "am" if hour < 12 else "pm"
+        hour_12 = hour % 12
+        if hour_12 == 0:
+            hour_12 = 12
+        if minute == 0:
+            return f"{day:02d}/{month} {hour_12}{ampm}"
+        return f"{day:02d}/{month} {hour_12}:{minute:02d}{ampm}"
 
 def main():
-    # Load config
-    cfg = load_usage_config()
+    # Load configs
+    config = load_config()
+    usage = load_usage_config()
+    time_fmt = config.get('time_format', 12)
 
     # Get model
     model, has_thinking = get_model_from_jsonl()
     model_str = format_model(model, has_thinking)
 
     # Session info
-    s_pct = cfg.get('session_percent')
-    s_target = parse_datetime(cfg.get('session_reset'))
+    s_pct = usage.get('session_percent')
+    s_target = parse_datetime(usage.get('session_reset'))
     s_time = time_until(s_target)
-    s_reset_str = format_session_reset(s_target)
+    s_reset_str = format_session_reset(s_target, time_fmt)
     s_color = get_color(s_pct)
     s_pct_str = f"{s_pct}%" if s_pct is not None else "?"
 
     # Week info
-    w_pct = cfg.get('week_percent')
-    w_target = parse_datetime(cfg.get('week_reset'))
+    w_pct = usage.get('week_percent')
+    w_target = parse_datetime(usage.get('week_reset'))
     w_time = time_until(w_target)
-    w_reset_str = format_week_reset(w_target)
+    w_reset_str = format_week_reset(w_target, time_fmt)
     w_color = get_color(w_pct)
     w_pct_str = f"{w_pct}%" if w_pct is not None else "?"
 
