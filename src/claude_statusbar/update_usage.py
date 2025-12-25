@@ -52,18 +52,18 @@ def parse_usage_output(text):
     """Parse /usage output text from Claude CLI"""
     data = {}
 
-    # Session percentage: "XX% used" after "Current session"
-    session_match = re.search(r'Current session\s+[█░▓\s]*(\d+)%\s*used', text, re.DOTALL)
+    # Session percentage: find "XX% used" after "Current session"
+    # Use .+? to match any chars (progress bar has various unicode chars like ▌█░▓)
+    session_match = re.search(r'Current session.+?(\d+)%\s*used', text, re.DOTALL)
     if session_match:
         data['session_percent'] = int(session_match.group(1))
 
-    # Session reset: "Resets 1:59am" or "Resets 2pm" - parse to full datetime
+    # Session reset: "Resets 2:59pm" or "Resets 3pm"
     session_reset = re.search(r'Current session.*?Resets?\s+(\d+(?::\d+)?)(am|pm)', text, re.DOTALL | re.IGNORECASE)
     if session_reset:
-        time_part = session_reset.group(1)  # "1:59" or "2"
-        ampm = session_reset.group(2).lower()  # "am" or "pm"
+        time_part = session_reset.group(1)  # "2:59" or "3"
+        ampm = session_reset.group(2).lower()
 
-        # Parse hour and minute
         if ':' in time_part:
             hour = int(time_part.split(':')[0])
             minute = int(time_part.split(':')[1])
@@ -71,54 +71,63 @@ def parse_usage_output(text):
             hour = int(time_part)
             minute = 0
 
-        # Convert to 24h
         if ampm == 'pm' and hour != 12:
             hour += 12
         elif ampm == 'am' and hour == 12:
             hour = 0
 
-        # Calculate next reset datetime
         now = datetime.now()
         target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if target <= now:
             target = target.replace(day=target.day + 1)
         data['session_reset'] = target.isoformat()
-        data['session_reset_hour'] = hour  # Keep for backwards compat
+        data['session_reset_hour'] = hour
 
-    # Week percentage (all models)
-    week_match = re.search(r'Current week \(all models\)\s+[█░▓\s]*(\d+)%\s*used', text, re.DOTALL)
+    # Week percentage (all models) - use .+? for any progress bar chars
+    week_match = re.search(r'Current week \(all models\).+?(\d+)%\s*used', text, re.DOTALL)
     if week_match:
         data['week_percent'] = int(week_match.group(1))
 
-    # Week reset: "Resets Dec 30, 5pm" or similar
-    week_reset = re.search(r'Current week.*?Resets?\s+([A-Za-z]+\s+\d+),?\s*(\d+(?::\d+)?(?:am|pm))', text, re.DOTALL | re.IGNORECASE)
+    # Week reset: "Resets Jan 1, 2026, 4:59am" or "Resets Dec 30, 5pm" (year optional)
+    week_reset = re.search(
+        r'Current week \(all models\).*?Resets?\s+([A-Za-z]+\s+\d+)(?:,\s*(\d{4}))?,?\s*(\d+(?::\d+)?)(am|pm)',
+        text, re.DOTALL | re.IGNORECASE
+    )
     if week_reset:
-        date_str = week_reset.group(1)  # "Dec 30"
-        time_str = week_reset.group(2).lower()  # "5pm"
+        date_str = week_reset.group(1)  # "Jan 1" or "Dec 30"
+        year_str = week_reset.group(2)  # "2026" or None
+        time_part = week_reset.group(3)  # "4:59" or "5"
+        ampm = week_reset.group(4).lower()
 
         # Parse time
-        if ':' in time_str:
-            hour = int(time_str.split(':')[0])
-            minute = int(time_str.split(':')[1].rstrip('apm'))
+        if ':' in time_part:
+            hour = int(time_part.split(':')[0])
+            minute = int(time_part.split(':')[1])
         else:
-            hour = int(re.match(r'\d+', time_str).group())
+            hour = int(time_part)
             minute = 0
-        if 'pm' in time_str and hour != 12:
+        if ampm == 'pm' and hour != 12:
             hour += 12
-        elif 'am' in time_str and hour == 12:
+        elif ampm == 'am' and hour == 12:
             hour = 0
 
-        # Parse date (assume current or next year)
+        # Parse date
         try:
             now = datetime.now()
             month_day = datetime.strptime(date_str, "%b %d")
-            year = now.year
+
+            if year_str:
+                year = int(year_str)
+            else:
+                year = now.year
+                # If date is in the past, use next year
+                test_target = datetime(year, month_day.month, month_day.day, hour, minute)
+                if test_target < now:
+                    year += 1
+
             target = datetime(year, month_day.month, month_day.day, hour, minute)
-            # If target is in the past, use next year
-            if target < now:
-                target = datetime(year + 1, month_day.month, month_day.day, hour, minute)
             data['week_reset'] = target.isoformat()
-        except:
+        except Exception:
             pass
 
     return data
